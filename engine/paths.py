@@ -11,7 +11,12 @@ from shapely.geometry import MultiPolygon, Polygon, box, mapping, shape
 from . import config
 from .grid import centres
 
-TRANSFORM = from_origin(config.WEST, config.NORTH, config.GRID_STEP, config.GRID_STEP)
+FINE_STEP = config.GRID_STEP / config.UPSAMPLE
+# The radar sizes along the state line are carried a few squares past it before the
+# shapes are rounded, so rounding never pulls a path back from the line; the shapes
+# are then trimmed to Colorado.
+PAD = 3
+FINE_TRANSFORM = from_origin(config.WEST - PAD * config.GRID_STEP, config.NORTH + PAD * config.GRID_STEP, FINE_STEP, FINE_STEP)
 COLORADO = box(config.WEST, config.SOUTH, config.EAST, config.NORTH)
 KM_PER_DEGREE = 111.32
 
@@ -51,6 +56,46 @@ def _round_coords(obj):
     return obj
 
 
+def _blend(inches: np.ndarray) -> np.ndarray:
+    """Split each radar square UPSAMPLE x UPSAMPLE and blend between square centres (bilinear).
+
+    A radar square's size belongs to its centre. Blending puts a band's edge part way
+    between a square over the size and its neighbour under it, instead of along the
+    square's straight side, which gives a better estimate of where the edge is.
+    """
+    a = np.clip(inches, 0, None)
+    k = config.UPSAMPLE
+
+    def weights(n):
+        x = np.clip((np.arange(n * k) + 0.5) / k - 0.5, 0, n - 1)
+        i0 = np.minimum(np.floor(x).astype(int), n - 2) if n > 1 else np.zeros(n * k, int)
+        return i0, x - i0
+
+    r0, fr = weights(a.shape[0])
+    c0, fc = weights(a.shape[1])
+    top = a[r0][:, c0] * (1 - fc) + a[r0][:, c0 + 1] * fc
+    bottom = a[r0 + 1][:, c0] * (1 - fc) + a[r0 + 1][:, c0 + 1] * fc
+    return top * (1 - fr)[:, None] + bottom * fr[:, None]
+
+
+def _chaikin(ring, passes: int) -> list:
+    """Round a closed ring's corners (Chaikin's method: cut each corner a quarter in)."""
+    pts = np.asarray(ring.coords)[:-1]
+    for _ in range(passes):
+        nxt = np.roll(pts, -1, axis=0)
+        pts = np.column_stack([0.75 * pts + 0.25 * nxt, 0.25 * pts + 0.75 * nxt]).reshape(-1, 2)
+    return pts.tolist()
+
+
+def _round_corners(geom):
+    out = []
+    for p in _parts(geom):
+        holes = [_chaikin(h, config.SMOOTH_PASSES) for h in p.interiors]
+        p = Polygon(_chaikin(p.exterior, config.SMOOTH_PASSES), holes)
+        out.append(shapely.make_valid(p.simplify(config.CURVE_TOLERANCE, preserve_topology=True)))
+    return shapely.union_all(out) if out else Polygon()
+
+
 def band_shapes(inches: np.ndarray) -> list[tuple[float, object]]:
     """One shape per size band that has any area: [(lower edge in inches, geometry)].
 
@@ -60,14 +105,18 @@ def band_shapes(inches: np.ndarray) -> list[tuple[float, object]]:
     out = []
     below = COLORADO
     grid_size = 10**-config.COORD_DECIMALS
+    if not (inches >= config.BANDS[0]).any():
+        return out
+    fine = _blend(np.pad(inches, PAD, mode="edge"))
     for lo in config.BANDS:
-        mask = inches >= lo
+        mask = fine >= lo
         if not mask.any():
             break
-        cells = [shape(g) for g, _ in features.shapes(mask.astype(np.uint8), mask=mask, transform=TRANSFORM)]
+        cells = [shape(g) for g, _ in features.shapes(mask.astype(np.uint8), mask=mask, transform=FINE_TRANSFORM)]
         geom = shapely.union_all(cells)
         geom = geom.simplify(config.SIMPLIFY_DEGREES, preserve_topology=True)
         geom = _drop_specks(geom)
+        geom = _round_corners(geom)
         if geom.is_empty:
             break
         geom = shapely.make_valid(geom.intersection(below))

@@ -86,6 +86,8 @@ def test_paths_are_clipped_to_colorado():
     g = paths.band_shapes(a)[0][1]
     w, s, e, n = g.bounds
     assert w >= config.WEST and e <= config.EAST and n <= config.NORTH and s >= config.SOUTH
+    # Rounding never pulls a path back from the state line it reaches
+    assert abs(e - config.EAST) < 1e-9 and abs(n - config.NORTH) < 1e-9
 
 
 def test_geojson_output():
@@ -96,13 +98,13 @@ def test_geojson_output():
     assert f["geometry"]["type"] == "MultiPolygon"
     g = shape(f["geometry"])
     assert g.is_valid and not g.is_empty
-    # Coordinates rounded to 3 decimals, outer rings counter-clockwise (GeoJSON rule)
+    # Coordinates rounded to COORD_DECIMALS, outer rings counter-clockwise (GeoJSON rule)
     ring = f["geometry"]["coordinates"][0][0]
-    assert all(len(str(v).split(".")[-1]) <= 3 for pt in ring for v in pt)
+    assert all(len(str(v).split(".")[-1]) <= config.COORD_DECIMALS for pt in ring for v in pt)
     from shapely.geometry import LinearRing
 
     assert LinearRing(ring).is_ccw
-    assert paths.bbox(shapes) == [round(v, 3) for v in shapes[0][1].bounds]
+    assert paths.bbox(shapes) == [round(v, config.COORD_DECIMALS) for v in shapes[0][1].bounds]
 
 
 def test_same_input_gives_the_same_output():
@@ -118,3 +120,14 @@ def test_city_sizes():
     r, c = cell(40.10, -104.80)  # about 7 miles east of Frederick: too far
     a[r - 1 : r + 2, c - 1 : c + 2] = 2.2
     assert paths.city_sizes(a) == {"strasburg": 1.8}
+
+
+def test_edges_are_round_not_square():
+    shapes = paths.band_shapes(storm())
+    outer = shapes[0][1]
+    # A square-edged box has 4 corners; a rounded one has many points along its corners
+    assert len(outer.exterior.coords) > 12
+    # The corner of the made-up swath is cut off, so a spot right in the corner is outside
+    assert not outer.contains(Point(-104.199, 39.799))
+    # The edge falls between the last square over 1" and the first one under it
+    assert outer.contains(Point(-103.7, 39.796)) and not outer.contains(Point(-103.7, 39.80))

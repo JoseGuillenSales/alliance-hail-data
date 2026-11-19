@@ -30,9 +30,12 @@ GRID_NI = 7000  # columns
 GRID_NJ = 3500  # rows
 
 # Shapes: smoothing, smallest spot kept, and rounding of coordinates.
-SIMPLIFY_DEGREES = 0.003  # about 300 m
+UPSAMPLE = 4  # radar squares are split 4 x 4 and blended, so edges fall between square centres
+SIMPLIFY_DEGREES = 0.0015  # about 150 m: removes the small steps left by the split
+SMOOTH_PASSES = 3  # corner-rounding passes, for smooth round edges
+CURVE_TOLERANCE = 0.0003  # about 30 m: drops extra points along the rounded curves
 MIN_AREA_KM2 = 3.0  # radar spots (and holes) smaller than this are dropped as noise
-COORD_DECIMALS = 3  # about 100 m
+COORD_DECIMALS = 4  # about 10 m, so curves stay smooth when zoomed in
 
 # A city "had radar hail" when radar showed MIN_INCHES or more within this distance of
 # its centre.
