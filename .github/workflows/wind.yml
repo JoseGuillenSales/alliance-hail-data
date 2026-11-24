@@ -1,0 +1,73 @@
+# Updates the wind paths every morning and publishes data/ with GitHub Pages.
+# NOAA posts each hour's wind analysis about 7 hours late, so this runs later than the
+# hail job: at 14:30 UTC (7:30 am MST / 8:30 am MDT) the whole Colorado day is out.
+# Run it by hand from the Actions tab to re-process days ("dates") or a range.
+name: Daily wind paths
+
+on:
+  schedule:
+    - cron: "30 14 * * *"
+  workflow_dispatch:
+    inputs:
+      dates:
+        description: "Re-process these days (YYYY-MM-DD, space-separated). Leave empty for the normal daily run."
+        required: false
+      range:
+        description: "Or a range, first and last day (e.g. 2026-05-01 2026-10-31). About 6 months per run."
+        required: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: hail-paths # shared with the hail job, so the two never push at the same time
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Tests
+        run: python -m pytest -q -p no:cacheprovider
+
+      - name: Process wind
+        env:
+          DATES: ${{ github.event.inputs.dates }}
+          RANGE: ${{ github.event.inputs.range }}
+        run: |
+          if [ -n "$DATES" ]; then python -m engine.wind --out data/wind day $DATES
+          elif [ -n "$RANGE" ]; then python -m engine.wind --out data/wind --workers 4 range $RANGE
+          else python -m engine.wind --out data/wind daily
+          fi
+
+      - name: Save the new files
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/wind
+          git diff --cached --quiet || git commit -m "Wind paths updated $(date -u +%Y-%m-%d)"
+          git pull --rebase
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: data
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
