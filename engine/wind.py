@@ -367,9 +367,21 @@ def run(day_list: list[date], out: Path, workers: int, mode: str) -> int:
 
 
 def daily_days(out: Path, today: date) -> list[date]:
+    """The last few finished days, missing days to retry, and history not done yet.
+
+    History (from WIND_HISTORY_START) that isn't in the index yet is caught up newest
+    first, up to WIND_CATCHUP_DAYS per run, so the first runs fill in the past by themselves.
+    """
     picked = {today - timedelta(days=n) for n in range(1, config.RECHECK_DAYS + 1)}
     oldest = today - timedelta(days=config.RETRY_MISSING_DAYS)
-    for e in load_index(out).values():
+    index = load_index(out)
+    todo, d = [], today - timedelta(days=config.RECHECK_DAYS + 1)
+    while d >= config.WIND_HISTORY_START and len(todo) < config.WIND_CATCHUP_DAYS:
+        if d.isoformat() not in index:
+            todo.append(d)
+        d -= timedelta(days=1)
+    picked |= set(todo)
+    for e in index.values():
         d = date.fromisoformat(e["date"])
         if e["status"] == "missing" and d >= oldest:
             picked.add(d)

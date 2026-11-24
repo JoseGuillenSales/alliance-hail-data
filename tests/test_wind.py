@@ -124,3 +124,14 @@ def test_damage_report_alone_makes_a_wind_day(monkeypatch):
     dmg = [{"time": "2026-06-22T23:00Z", "lat": 40.3, "lng": -103.5, "kind": "damage", "thunderstorm": True, "mph": None, "measured": False, "source": "Public", "place": "Brush"}]
     r = wind.process_day(date(2026, 6, 22), dmg)
     assert r["entry"]["status"] == "wind" and r["doc"]["features"] == [] and r["entry"]["bbox"] == [-103.5, 40.3, -103.5, 40.3]
+
+
+def test_daily_run_catches_up_history_newest_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "WIND_HISTORY_START", date(2026, 11, 1))
+    monkeypatch.setattr(config, "WIND_CATCHUP_DAYS", 5)
+    done = {"date": "2026-11-15", "status": "none", "maxMph": 40}
+    missing = {"date": "2026-11-03", "status": "missing", "reason": "x"}
+    wind.write_index(tmp_path, {e["date"]: e for e in (done, missing)})
+    got = [d.isoformat() for d in wind.daily_days(tmp_path, date(2026, 11, 20))]
+    # the last 3 days, then 5 history days newest first skipping the 15th, plus the missing day
+    assert got == ["2026-11-03", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19"]

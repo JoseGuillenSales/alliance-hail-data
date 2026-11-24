@@ -55,7 +55,8 @@ What the paths are good and bad at (from checks against measured gusts, see the 
 
 - **Every day of the year** (Colorado's worst windstorms come in winter).
 - The history starts **November 18, 2024**, the same as the hail files.
-- The daily run (14:30 UTC) processes the last 3 finished days and retries "missing"
+- The daily run (14:30 UTC) processes the last 3 finished days, fills in history not
+  done yet (up to 400 days per run, newest first), and retries "missing"
   days up to 30 days old. NOAA posts each hour about 7 hours late, so a day is complete
   by the next morning.
 

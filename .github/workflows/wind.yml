@@ -5,6 +5,13 @@
 name: Daily wind paths
 
 on:
+  # Publishing a change to the wind engine runs it once right away (this also fills in
+  # the history the first time: up to 400 past days per run, see WIND_CATCHUP_DAYS).
+  push:
+    branches: [main]
+    paths:
+      - "engine/wind.py"
+      - ".github/workflows/wind.yml"
   schedule:
     - cron: "30 14 * * *"
   workflow_dispatch:
@@ -52,7 +59,7 @@ jobs:
         run: |
           if [ -n "$DATES" ]; then python -m engine.wind --out data/wind day $DATES
           elif [ -n "$RANGE" ]; then python -m engine.wind --out data/wind --workers 4 range $RANGE
-          else python -m engine.wind --out data/wind daily
+          else python -m engine.wind --out data/wind --workers 4 daily
           fi
 
       - name: Save the new files
