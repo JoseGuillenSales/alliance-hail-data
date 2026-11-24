@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 /cache/
 backfill.log
+.wind-test/

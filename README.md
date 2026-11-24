@@ -15,6 +15,14 @@ only an inspection can confirm damage.
 The file formats are described in `docs/hail-paths-data.md` in the
 alliance-restoration-website repo. That's the contract the website and CRM rely on.
 
+**Wind paths** are made here too (`engine/wind.py`, the "Daily wind paths" Action) and
+published under `data/wind/`: each Colorado day's strongest estimated wind gust from
+NOAA's hourly wind analysis (URMA), plus the Weather Service's wind reports. Their
+format, and how close they are to measured gusts, is in
+[`docs/wind-paths-data.md`](docs/wind-paths-data.md). All wind-path speeds are
+estimated; thunderstorm gusts are often missed by the hourly maps, which is why the
+reports are included.
+
 ## Running it
 
 ```bash
@@ -22,6 +30,9 @@ pip install -r requirements.txt
 python -m engine day 2026-05-21            # one or more days
 python -m engine range 2024-11-18 2026-11-17   # storm season plus ground-report days
 python -m engine daily                     # what the daily job runs
+python -m engine.wind day 2025-12-17       # wind for one or more days
+python -m engine.wind range 2026-05-01 2026-10-31
+python -m engine.wind daily                # what the daily wind job runs
 ```
 
 On a computer without Python, use Docker:
@@ -32,4 +43,5 @@ docker run --rm -v "$PWD:/work" hailpaths python -m engine day 2026-05-21
 ```
 
 Radar data: NOAA/NSSL MRMS, via the Iowa Environmental Mesonet archive (Iowa State
-University). Ground reports: NWS Local Storm Reports via the Iowa Environmental Mesonet.
+University). Wind gusts: NOAA URMA, from NOAA's open data on AWS. Ground reports: NWS
+Local Storm Reports via the Iowa Environmental Mesonet.

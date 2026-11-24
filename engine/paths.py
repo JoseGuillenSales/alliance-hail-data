@@ -1,6 +1,7 @@
-"""Turning a day's radar hail sizes into hail-path shapes and per-city sizes."""
+"""Turning a day's grid of values (radar hail sizes, wind gusts) into band shapes, and per-city sizes."""
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 import shapely
@@ -11,13 +12,40 @@ from shapely.geometry import MultiPolygon, Polygon, box, mapping, shape
 from . import config
 from .grid import centres
 
-FINE_STEP = config.GRID_STEP / config.UPSAMPLE
-# The radar sizes along the state line are carried a few squares past it before the
-# shapes are rounded, so rounding never pulls a path back from the line; the shapes
-# are then trimmed to Colorado.
+# The values along the state line are carried a few squares past it before the shapes
+# are rounded, so rounding never pulls a path back from the line; the shapes are then
+# trimmed to Colorado.
 PAD = 3
-FINE_TRANSFORM = from_origin(config.WEST - PAD * config.GRID_STEP, config.NORTH + PAD * config.GRID_STEP, FINE_STEP, FINE_STEP)
 COLORADO = box(config.WEST, config.SOUTH, config.EAST, config.NORTH)
+
+
+@dataclass(frozen=True)
+class Shaping:
+    """How a grid becomes band shapes. The grid's top-left corner is Colorado's north-west corner."""
+
+    bands: tuple[float, ...]
+    step: float  # grid square size, degrees
+    upsample: int
+    simplify: float
+    smooth_passes: int
+    curve_tolerance: float
+    min_area_km2: float
+
+    @property
+    def fine_transform(self):
+        fine = self.step / self.upsample
+        return from_origin(config.WEST - PAD * self.step, config.NORTH + PAD * self.step, fine, fine)
+
+
+HAIL = Shaping(
+    bands=tuple(config.BANDS),
+    step=config.GRID_STEP,
+    upsample=config.UPSAMPLE,
+    simplify=config.SIMPLIFY_DEGREES,
+    smooth_passes=config.SMOOTH_PASSES,
+    curve_tolerance=config.CURVE_TOLERANCE,
+    min_area_km2=config.MIN_AREA_KM2,
+)
 KM_PER_DEGREE = 111.32
 
 
@@ -37,13 +65,13 @@ def _parts(geom) -> list[Polygon]:
     return [p for g in getattr(geom, "geoms", []) for p in _parts(g)]
 
 
-def _drop_specks(geom):
-    """Remove spots and holes smaller than MIN_AREA_KM2."""
+def _drop_specks(geom, min_km2: float):
+    """Remove spots and holes smaller than min_km2."""
     keep = []
     for p in _parts(geom):
-        if _km2(p) < config.MIN_AREA_KM2:
+        if _km2(p) < min_km2:
             continue
-        holes = [h for h in p.interiors if _km2(Polygon(h)) >= config.MIN_AREA_KM2]
+        holes = [h for h in p.interiors if _km2(Polygon(h)) >= min_km2]
         keep.append(Polygon(p.exterior, holes))
     return shapely.union_all(keep) if keep else Polygon()
 
@@ -56,15 +84,14 @@ def _round_coords(obj):
     return obj
 
 
-def _blend(inches: np.ndarray) -> np.ndarray:
-    """Split each radar square UPSAMPLE x UPSAMPLE and blend between square centres (bilinear).
+def _blend(inches: np.ndarray, k: int) -> np.ndarray:
+    """Split each square k x k and blend between square centres (bilinear).
 
     A radar square's size belongs to its centre. Blending puts a band's edge part way
     between a square over the size and its neighbour under it, instead of along the
     square's straight side, which gives a better estimate of where the edge is.
     """
     a = np.clip(inches, 0, None)
-    k = config.UPSAMPLE
 
     def weights(n):
         x = np.clip((np.arange(n * k) + 0.5) / k - 0.5, 0, n - 1)
@@ -87,17 +114,17 @@ def _chaikin(ring, passes: int) -> list:
     return pts.tolist()
 
 
-def _round_corners(geom):
+def _round_corners(geom, s: Shaping):
     out = []
     for p in _parts(geom):
-        holes = [_chaikin(h, config.SMOOTH_PASSES) for h in p.interiors]
-        p = Polygon(_chaikin(p.exterior, config.SMOOTH_PASSES), holes)
-        out.append(shapely.make_valid(p.simplify(config.CURVE_TOLERANCE, preserve_topology=True)))
+        holes = [_chaikin(h, s.smooth_passes) for h in p.interiors]
+        p = Polygon(_chaikin(p.exterior, s.smooth_passes), holes)
+        out.append(shapely.make_valid(p.simplify(s.curve_tolerance, preserve_topology=True)))
     return shapely.union_all(out) if out else Polygon()
 
 
-def band_shapes(inches: np.ndarray) -> list[tuple[float, object]]:
-    """One shape per size band that has any area: [(lower edge in inches, geometry)].
+def band_shapes(values: np.ndarray, s: Shaping = HAIL) -> list[tuple[float, object]]:
+    """One shape per band that has any area: [(lower edge, geometry)].
 
     Each band's shape covers everything at or above its lower edge and sits inside the
     band below it, so drawing them in order stacks them neatly.
@@ -105,23 +132,24 @@ def band_shapes(inches: np.ndarray) -> list[tuple[float, object]]:
     out = []
     below = COLORADO
     grid_size = 10**-config.COORD_DECIMALS
-    if not (inches >= config.BANDS[0]).any():
+    if not (values >= s.bands[0]).any():
         return out
-    fine = _blend(np.pad(inches, PAD, mode="edge"))
-    for lo in config.BANDS:
+    fine = _blend(np.pad(values, PAD, mode="edge"), s.upsample)
+    transform = s.fine_transform
+    for lo in s.bands:
         mask = fine >= lo
         if not mask.any():
             break
-        cells = [shape(g) for g, _ in features.shapes(mask.astype(np.uint8), mask=mask, transform=FINE_TRANSFORM)]
+        cells = [shape(g) for g, _ in features.shapes(mask.astype(np.uint8), mask=mask, transform=transform)]
         geom = shapely.union_all(cells)
-        geom = geom.simplify(config.SIMPLIFY_DEGREES, preserve_topology=True)
-        geom = _drop_specks(geom)
-        geom = _round_corners(geom)
+        geom = geom.simplify(s.simplify, preserve_topology=True)
+        geom = _drop_specks(geom, s.min_area_km2)
+        geom = _round_corners(geom, s)
         if geom.is_empty:
             break
         geom = shapely.make_valid(geom.intersection(below))
         geom = shapely.set_precision(geom, grid_size)
-        geom = _drop_specks(geom)
+        geom = _drop_specks(geom, s.min_area_km2)
         if geom.is_empty:
             break
         geom = shapely.orient_polygons(shapely.normalize(geom), exterior_cw=False)
@@ -136,11 +164,12 @@ def band_label(lo: float) -> dict:
     return {"minInches": lo, "maxInches": hi}
 
 
-def feature(lo: float, geom) -> dict:
+def feature(lo: float, geom, properties: dict | None = None) -> dict:
+    """A GeoJSON feature for one band; hail size properties unless others are given."""
     g = mapping(geom if isinstance(geom, MultiPolygon) else MultiPolygon(_parts(geom)))
     return {
         "type": "Feature",
-        "properties": band_label(lo),
+        "properties": properties if properties is not None else band_label(lo),
         "geometry": {"type": "MultiPolygon", "coordinates": _round_coords(g["coordinates"])},
     }
 
@@ -153,9 +182,12 @@ def bbox(shapes: list[tuple[float, object]]) -> list[float] | None:
     return [round(w, d), round(s, d), round(e, d), round(n, d)]
 
 
-def city_sizes(inches: np.ndarray) -> dict[str, float]:
-    """Biggest radar size within CITY_RADIUS_MILES of each city, for cities at MIN_INCHES or more."""
-    lats, lons = centres()
+def city_sizes(inches: np.ndarray, grid_centres=None, minimum: float = config.MIN_INCHES, digits: int = 2) -> dict[str, float]:
+    """Biggest value within CITY_RADIUS_MILES of each city, for cities at `minimum` or more.
+
+    grid_centres: (row latitudes, column longitudes); the radar grid's when not given.
+    """
+    lats, lons = grid_centres or centres()
     out = {}
     for slug, _name, lat, lng in config.CITIES:
         dlat = config.CITY_RADIUS_MILES / 69.0
@@ -171,6 +203,6 @@ def city_sizes(inches: np.ndarray) -> dict[str, float]:
             np.sqrt(np.sin(np.radians(la - lat) / 2) ** 2 + np.cos(np.radians(lat)) * np.cos(np.radians(la)) * np.sin(np.radians(lo - lng) / 2) ** 2)
         )
         biggest = float(window[miles <= config.CITY_RADIUS_MILES].max(initial=0.0))
-        if biggest >= config.MIN_INCHES:
-            out[slug] = round(biggest, 2)
+        if biggest >= minimum:
+            out[slug] = round(biggest, digits) if digits else int(round(biggest))
     return out

@@ -4,6 +4,8 @@ Change the size bands here. Each band's shape covers everything at or above its
 lower edge, so the shapes stack (the 1.5" shape sits inside the 1" shape, and so on).
 """
 
+from datetime import date
+
 # Bump when the file formats change in a way readers must know about.
 DATA_VERSION = 1
 
@@ -83,3 +85,32 @@ RECHECK_DAYS = 3
 RETRY_MISSING_DAYS = 30
 
 USER_AGENT = "alliance-hail-data/1 (radar hail paths for Colorado)"
+
+# ---------------------------------------------------------------- wind
+
+# Wind paths: the strongest gust of each Colorado day from NOAA's hourly wind analysis
+# (URMA, 2.5 km), plus the wind gusts and damage the Weather Service received that day.
+# Processed every day of the year (Colorado's worst windstorms come in winter).
+WIND_DATA_VERSION = 1
+WIND_BANDS = [60.0, 70.0, 80.0, 90.0]  # mph, lower edges; the last band has no upper edge
+WIND_STEP = 0.02  # the gusts are put on a 0.02-degree Colorado grid (about 2 km)
+WIND_UPSAMPLE = 4
+WIND_SIMPLIFY_DEGREES = 0.004  # about 400 m; the source squares are 2.5 km
+WIND_SMOOTH_PASSES = 3
+WIND_CURVE_TOLERANCE = 0.0008
+WIND_MIN_AREA_KM2 = 15.0  # a few source squares; smaller spots are noise
+WIND_URL = "https://noaa-urma-pds.s3.amazonaws.com/urma2p5.{t:%Y%m%d}/urma2p5.t{t:%H}z.2dvaranl_ndfd.grb2_wexp"
+WIND_MAX_MISSING_HOURS = 2  # more missing hours than this and the day is "missing"
+# History: the daily run fills in days since this date that aren't done yet, newest
+# first, this many per run (the same start as the hail history).
+WIND_HISTORY_START = date(2024, 11, 18)
+WIND_CATCHUP_DAYS = 400
+# Reports kept: gusts at or above this, and every wind-damage report.
+WIND_REPORT_MIN_MPH = 50
+WIND_REPORT_TYPES = {
+    "TSTM WND GST": "gust",
+    "NON-TSTM WND GST": "gust",
+    "HIGH SUST WINDS": "gust",
+    "TSTM WND DMG": "damage",
+    "NON-TSTM WND DMG": "damage",
+}
