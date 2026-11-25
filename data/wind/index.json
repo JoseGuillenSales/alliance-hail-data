@@ -734,5 +734,6 @@
 {"date":"2026-11-20","status":"wind","maxMph":82,"reports":50,"maxReportMph":81,"file":"days/2026-11-20.json","bbox":[-108.6129,36.99,-102.2303,40.6833]},
 {"date":"2026-11-21","status":"wind","maxMph":65,"file":"days/2026-11-21.json","bbox":[-105.1498,37.0667,-105.0762,37.2378]},
 {"date":"2026-11-22","status":"none","maxMph":47},
-{"date":"2026-11-23","status":"none","maxMph":51}
+{"date":"2026-11-23","status":"none","maxMph":51},
+{"date":"2026-11-24","status":"none","maxMph":49}
 ]}
