@@ -4,3 +4,4 @@ __pycache__/
 /cache/
 backfill.log
 .wind-test/
+.duration-test/

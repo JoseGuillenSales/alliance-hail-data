@@ -114,3 +114,21 @@ WIND_REPORT_TYPES = {
     "TSTM WND DMG": "damage",
     "NON-TSTM WND DMG": "damage",
 }
+
+# ---------------------------------------------------------------- hail duration
+
+# How long radar showed hail at each spot, from NOAA's 2-minute MESH snapshots, for each
+# hail day (a day in index.json with status "hail"). Each snapshot at DURATION_MIN_INCHES
+# or more counts as DURATION_STEP_MINUTES of hail. Radar sees hail in the cloud, so
+# these are estimates, never measurements at the ground.
+DURATION_DATA_VERSION = 1
+DURATION_STEP_MINUTES = 2
+DURATION_MIN_INCHES = 1.0
+DURATION_BANDS = [2, 5, 10, 15]  # minutes, lower edges; the last band has no upper edge
+
+DURATION_MAX_MISSING_SNAPSHOTS = 30  # more missing than this (an hour) and the day is "missing"
+DURATION_DOWNLOAD_THREADS = 8
+# The daily run fills in hail days since this date that aren't done yet, newest first,
+# stopping after this many minutes so the job fits in GitHub's time limit.
+DURATION_HISTORY_START = date(2024, 11, 18)
+DURATION_TIME_BUDGET_MINUTES = 300

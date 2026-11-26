@@ -23,6 +23,12 @@ format, and how close they are to measured gusts, is in
 estimated; thunderstorm gusts are often missed by the hourly maps, which is why the
 reports are included.
 
+**Hail duration** is made here too (`engine/duration.py`, the "Daily hail duration"
+Action) and published under `data/duration/`: for each hail day, how many minutes radar
+showed hail of 1 inch or more at each spot, and when it first and last did, from NOAA's
+2-minute radar snapshots. Format and limits: [`docs/hail-duration-data.md`](docs/hail-duration-data.md).
+Always radar-estimated, never measured at the ground.
+
 ## Running it
 
 ```bash
@@ -33,6 +39,8 @@ python -m engine daily                     # what the daily job runs
 python -m engine.wind day 2025-12-17       # wind for one or more days
 python -m engine.wind range 2026-05-01 2026-10-31
 python -m engine.wind daily                # what the daily wind job runs
+python -m engine.duration day 2026-06-01   # hail duration for one or more hail days
+python -m engine.duration daily            # what the daily duration job runs
 ```
 
 On a computer without Python, use Docker:
