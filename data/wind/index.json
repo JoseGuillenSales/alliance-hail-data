@@ -737,5 +737,6 @@
 {"date":"2026-11-23","status":"none","maxMph":51},
 {"date":"2026-11-24","status":"none","maxMph":49},
 {"date":"2026-11-25","status":"none","maxMph":50},
-{"date":"2026-11-26","status":"none","maxMph":56}
+{"date":"2026-11-26","status":"none","maxMph":56},
+{"date":"2026-11-27","status":"wind","maxMph":87,"file":"days/2026-11-27.json","bbox":[-106.6537,39.0036,-105.2851,40.943]}
 ]}
